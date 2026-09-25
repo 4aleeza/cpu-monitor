@@ -14,9 +14,14 @@ const {
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: {
+        origin: "http://localhost:3000",
+        methods: ["GET", "POST"]
+    }
+});
 
-const PORT = 3000;
+const PORT = 4000;
 
 
 // --------------------------------------------------
