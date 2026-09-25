@@ -96,6 +96,18 @@ async function pollAndBroadcast() {
 // --------------------------------------------------
 
 io.on("connection", (socket) => {
+    socket.on("agent_cpu_static", (data) => {
+    console.log(
+        "Received agent static CPU info:",
+        data.machineId
+    );
+});
+
+socket.on("agent_metrics_update", (data) => {
+    console.log(
+        `Received agent telemetry: ${data.machineId} | CPU: ${data.metrics.cpu.overallLoad}%`
+    );
+});
 
     activeClients++;
 
