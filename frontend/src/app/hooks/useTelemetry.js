@@ -17,7 +17,13 @@ export default function useTelemetry() {
     const socket = io(SOCKET_URL);
     socketRef.current = socket;
 
-    const handleConnect = () => setConnected(true);
+    const handleConnect = () => {
+  setConnected(true);
+
+  socket.emit("dashboard_subscribe", {
+    machineId: "b5d24a59-a4fd-4ac9-8f1f-e6daf8b17193",
+  });
+};
     const handleDisconnect = () => setConnected(false);
 
     const handleCpuStatic = (data) => {

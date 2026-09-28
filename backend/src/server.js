@@ -96,65 +96,178 @@ async function pollAndBroadcast() {
 // --------------------------------------------------
 
 io.on("connection", (socket) => {
-    socket.on("agent_cpu_static", (data) => {
-    console.log(
-        "Received agent static CPU info:",
-        data.machineId
-    );
-});
 
-socket.on("agent_metrics_update", (data) => {
+    const role = socket.handshake.auth?.role;
+    const machineId = socket.handshake.auth?.machineId;
+
+    // ==============================
+    // AGENT CONNECTION
+    // ==============================
+
+    if (role === "agent") {
+
+        if (!machineId) {
+            console.log(
+                "Agent rejected: missing machine ID"
+            );
+
+            socket.disconnect(true);
+            return;
+        }
+
+        const roomName = `room:${machineId}`;
+
+        socket.join(roomName);
+
+        console.log(
+            `Agent connected: ${socket.id}`
+        );
+
+        console.log(
+            `Machine ID: ${machineId}`
+        );
+
+        console.log(
+            `Agent joined room: ${roomName}`
+        );
+
+
+        socket.on("agent_cpu_static", (data) => {
+
+            if (
+                data.machineId !== machineId ||
+                !data.cpuInfo
+            ) {
+                console.log(
+                    `Invalid static CPU payload from ${machineId}`
+                );
+                return;
+            }
+
+            console.log(
+                `Static CPU info received from ${machineId}`
+            );
+
+            socket
+                .to(roomName)
+                .emit(
+                    "cpu_static",
+                    data.cpuInfo
+                );
+        });
+
+
+        socket.on("agent_metrics_update", (data) => {
+
+            if (
+                data.machineId !== machineId ||
+                !data.metrics
+            ) {
+                console.log(
+                    `Invalid telemetry payload from ${machineId}`
+                );
+                return;
+            }
+
+            console.log(
+                `Telemetry received from ${machineId} | CPU: ${data.metrics.cpu.overallLoad}%`
+            );
+
+            socket
+                .to(roomName)
+                .emit(
+                    "metrics_update",
+                    data.metrics
+                );
+        });
+
+
+        socket.on("disconnect", () => {
+
+            console.log(
+                `Agent disconnected: ${machineId}`
+            );
+        });
+
+        return;
+    }
+
+
+    // ==============================
+    // EXISTING DASHBOARD CONNECTION
+    // ==============================
+    socket.on("dashboard_subscribe", ({ machineId }) => {
+
+    if (!machineId) {
+        console.log(
+            `Dashboard ${socket.id} attempted subscription without machine ID`
+        );
+        return;
+    }
+
+    const roomName = `room:${machineId}`;
+
+    socket.join(roomName);
+
     console.log(
-        `Received agent telemetry: ${data.machineId} | CPU: ${data.metrics.cpu.overallLoad}%`
+        `Dashboard ${socket.id} subscribed to machine ${machineId}`
+    );
+
+    console.log(
+        `Dashboard joined room: ${roomName}`
     );
 });
 
     activeClients++;
 
-    console.log(`Client connected: ${socket.id}`);
-    console.log(`Active clients: ${activeClients}`);
+    console.log(
+        `Dashboard connected: ${socket.id}`
+    );
+
+    console.log(
+        `Active dashboards: ${activeClients}`
+    );
+
+    // socket.emit(
+    //     "cpu_static",
+    //     cachedCpuInfo
+    // );
 
 
-    // Send cached hardware information only
-    // to the newly connected client.
-    socket.emit("cpu_static", cachedCpuInfo);
+    // if (activeClients === 1) {
 
+    //     console.log(
+    //         "Starting legacy live metrics collection..."
+    //     );
 
-    /*
-     * If the counter just changed from 0 -> 1,
-     * this is the first active dashboard.
-     *
-     * Start the telemetry worker immediately.
-     */
-    if (activeClients === 1) {
-
-        console.log("Starting live metrics collection...");
-
-        pollAndBroadcast();
-    }
+    //     pollAndBroadcast();
+    // }
 
 
     socket.on("disconnect", () => {
 
         activeClients--;
 
-        console.log(`Client disconnected: ${socket.id}`);
-        console.log(`Active clients: ${activeClients}`);
+        console.log(
+            `Dashboard disconnected: ${socket.id}`
+        );
+
+        console.log(
+            `Active dashboards: ${activeClients}`
+        );
 
 
-        /*
-         * The final dashboard has disconnected.
-         * Cancel any poll that is waiting to execute.
-         */
-        if (activeClients === 0) {
+        // if (activeClients === 0) {
 
-            if (metricsTimeout !== null) {
-                clearTimeout(metricsTimeout);
-                metricsTimeout = null;
-            }
+        //     if (metricsTimeout !== null) {
+        //         clearTimeout(metricsTimeout);
+        //         metricsTimeout = null;
+        //     }
 
-            console.log("Live metrics collection stopped.");
-        }
+        //     console.log(
+        //         "Legacy live metrics collection stopped."
+        //     );
+        // }
     });
 });
 
