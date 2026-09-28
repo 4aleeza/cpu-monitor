@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
+
 const {
     getCpuInfo,
     getSystemMetrics
@@ -13,6 +14,10 @@ const {
 // --------------------------------------------------
 
 const app = express();
+
+const staticCpuCache = new Map();
+
+
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
@@ -147,13 +152,20 @@ io.on("connection", (socket) => {
             console.log(
                 `Static CPU info received from ${machineId}`
             );
+                // Save this machine's static CPU information
+            staticCpuCache.set(
+            machineId,
+            data.cpuInfo
+    );
 
-            socket
-                .to(roomName)
-                .emit(
-                    "cpu_static",
-                    data.cpuInfo
-                );
+
+    // Send it to dashboards that are already in the room
+           socket
+        .to(roomName)
+        .emit(
+            "cpu_static",
+            data.cpuInfo
+        );
         });
 
 
@@ -216,6 +228,22 @@ io.on("connection", (socket) => {
     console.log(
         `Dashboard joined room: ${roomName}`
     );
+
+    if (staticCpuCache.has(machineId)) {
+
+        const cachedCpuInfo =
+            staticCpuCache.get(machineId);
+
+        // Send cached information only to this dashboard
+        socket.emit(
+            "cpu_static",
+            cachedCpuInfo
+        );
+
+        console.log(
+            `Cached CPU info sent to dashboard for ${machineId}`
+        );
+    }
 });
 
     activeClients++;
