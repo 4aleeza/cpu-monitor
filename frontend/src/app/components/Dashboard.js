@@ -16,10 +16,15 @@ function formatTimestamp(ts) {
 }
 
 export default function Dashboard() {
-  const { connected, cpuStatic, latest, history } = useTelemetry();
+  const { connected, isOnline, cpuStatic, latest, history } = useTelemetry();
 
   const cpu = latest?.cpu ?? null;
   const lastUpdate = formatTimestamp(latest?.timestamp);
+  const status = !connected
+  ? "disconnected"
+  : isOnline
+    ? "live"
+    : "offline";
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] px-4 py-6 text-neutral-200 sm:px-6 lg:px-10">
@@ -37,17 +42,30 @@ export default function Dashboard() {
               <span className="text-xs tabular-nums text-neutral-500">Updated {lastUpdate}</span>
             )}
             <span
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
-                connected
-                  ? "border-emerald-900 bg-emerald-950/50 text-emerald-400"
-                  : "border-red-900 bg-red-950/40 text-red-400"
-              }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-red-500"}`}
-              />
-              {connected ? "Live" : "Disconnected"}
-            </span>
+  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
+    status === "live"
+      ? "border-emerald-900 bg-emerald-950/50 text-emerald-400"
+      : status === "offline"
+        ? "border-neutral-700 bg-neutral-900 text-neutral-400"
+        : "border-red-900 bg-red-950/40 text-red-400"
+  }`}
+>
+  <span
+    className={`h-2 w-2 rounded-full ${
+      status === "live"
+        ? "bg-emerald-400"
+        : status === "offline"
+          ? "bg-neutral-500"
+          : "bg-red-500"
+    }`}
+  />
+
+  {status === "live"
+    ? "Live"
+    : status === "offline"
+      ? "Machine Offline"
+      : "Disconnected"}
+</span>
           </div>
         </header>
 

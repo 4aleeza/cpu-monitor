@@ -3,11 +3,6 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 
-// const {
-//     getCpuInfo,
-//     getSystemMetrics
-// } = require("./metrics");
-
 
 // --------------------------------------------------
 // Server setup
@@ -16,7 +11,7 @@ const { Server } = require("socket.io");
 const app = express();
 
 const staticCpuCache = new Map();
-
+const machineStatus = new Map();
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -27,73 +22,8 @@ const io = new Server(server, {
 });
 
 const PORT = 4000;
-
-
-// --------------------------------------------------
-// Server state
-// --------------------------------------------------
-
-// // Static CPU information loaded once at startup
-// let cachedCpuInfo = null;
-
-// // Number of currently connected dashboard clients
-// let activeClients = 0;
-
-// // Reference to the next scheduled metrics poll
-// let metricsTimeout = null;
-
-
-// --------------------------------------------------
-// Live metrics polling worker
-// --------------------------------------------------
-
-// async function pollAndBroadcast() {
-
-//     // Nobody is watching anymore.
-//     // Do not collect metrics or schedule another poll.
-//     if (activeClients === 0) {
-//         return;
-//     }
-
-//     try {
-
-//         // Wait until the current hardware collection
-//         // completely finishes.
-//         const metrics = await getSystemMetrics();
-
-//         // It is possible that all clients disconnected
-//         // while we were waiting for the metrics.
-//         if (activeClients > 0) {
-//             io.emit("metrics_update", metrics);
-//         }
-
-//     } catch (error) {
-
-//         // A temporary telemetry failure should not
-//         // crash the entire backend.
-//         console.error(
-//             "Error collecting live system metrics:",
-//             error
-//         );
-
-//     } finally {
-
-//         /*
-//          * Only schedule the NEXT collection after
-//          * the current collection has completely finished.
-//          *
-//          * This prevents overlapping hardware polling.
-//          */
-//         if (activeClients > 0) {
-//             metricsTimeout = setTimeout(
-//                 pollAndBroadcast,
-//                 1000
-//             );
-//         } else {
-//             metricsTimeout = null;
-//         }
-//     }
-// }
+const HEARTBEAT_TIMEOUT = 15000;
+const HEARTBEAT_CHECK_INTERVAL = 5000;
 
 
 // --------------------------------------------------
@@ -123,6 +53,26 @@ io.on("connection", (socket) => {
         const roomName = `room:${machineId}`;
 
         socket.join(roomName);
+        machineStatus.set(machineId, {
+        status: "online",
+        lastSeen: Date.now()
+        });
+
+
+        console.log(
+        `Machine marked online: ${machineId}`
+        );
+
+
+        io.to(roomName).emit(
+        "machine_status_change",
+        {
+        machineId,
+        status: "online",
+        lastSeen: Date.now()
+        }
+);
+
 
         console.log(
             `Agent connected: ${socket.id}`
@@ -193,13 +143,54 @@ io.on("connection", (socket) => {
                 );
         });
 
+        socket.on("agent_heartbeat", (data) => {
+
+    if (
+        data.machineId !== machineId
+    ) {
+        console.log(
+            `Invalid heartbeat from ${machineId}`
+        );
+
+        return;
+    }
+
+    const now = Date.now();
+
+    machineStatus.set(machineId, {
+        status: "online",
+        lastSeen: now
+    });
+});
 
         socket.on("disconnect", () => {
 
-            console.log(
-                `Agent disconnected: ${machineId}`
-            );
-        });
+    const lastSeen =
+        machineStatus.get(machineId)?.lastSeen
+        ?? Date.now();
+
+    machineStatus.set(machineId, {
+        status: "offline",
+        lastSeen
+    });
+
+    io.to(roomName).emit(
+        "machine_status_change",
+        {
+            machineId,
+            status: "offline",
+            lastSeen
+        }
+    );
+
+    console.log(
+        `Agent disconnected: ${machineId}`
+    );
+
+    console.log(
+        `Machine marked offline: ${machineId}`
+    );
+});
 
         return;
     }
@@ -220,6 +211,19 @@ io.on("connection", (socket) => {
     const roomName = `room:${machineId}`;
 
     socket.join(roomName);
+    if (machineStatus.has(machineId)) {
+
+    const currentStatus =
+        machineStatus.get(machineId);
+
+    socket.emit(
+        "machine_status_change",
+        {
+            machineId,
+            ...currentStatus
+        }
+    );
+}
 
     console.log(
         `Dashboard ${socket.id} subscribed to machine ${machineId}`
@@ -252,24 +256,7 @@ io.on("connection", (socket) => {
         `Dashboard connected: ${socket.id}`
     );
 
-    // console.log(
-    //     `Active dashboards: ${activeClients}`
-    // );
 
-    // socket.emit(
-    //     "cpu_static",
-    //     cachedCpuInfo
-    // );
-
-
-    // if (activeClients === 1) {
-
-    //     console.log(
-    //         "Starting legacy live metrics collection..."
-    //     );
-
-    //     pollAndBroadcast();
-    // }
 
     socket.on("disconnect", () => {
 
@@ -279,69 +266,48 @@ io.on("connection", (socket) => {
     });
 
 
-    // socket.on("disconnect", () => {
-
-    //     activeClients--;
-
-    //     console.log(
-    //         `Dashboard disconnected: ${socket.id}`
-    //     );
-
-    //     console.log(
-    //         `Active dashboards: ${activeClients}`
-    //     );
-
-
-        // if (activeClients === 0) {
-
-        //     if (metricsTimeout !== null) {
-        //         clearTimeout(metricsTimeout);
-        //         metricsTimeout = null;
-        //     }
-
-        //     console.log(
-        //         "Legacy live metrics collection stopped."
-        //     );
-        // }
     });
 
+    setInterval(() => {
 
+    const now = Date.now();
 
-// --------------------------------------------------
-// Server startup
-// --------------------------------------------------
+    for (const [machineId, machine] of machineStatus) {
 
-// async function startServer() {
+        if (
+            machine.status === "online" &&
+            now - machine.lastSeen > HEARTBEAT_TIMEOUT
+        ) {
 
-//     try {
+            machineStatus.set(machineId, {
+                status: "offline",
+                lastSeen: machine.lastSeen
+            });
 
-//         console.log("Reading CPU hardware information...");
+            const roomName =
+                `room:${machineId}`;
 
-//         // Fetch static CPU information exactly once.
-//         cachedCpuInfo = await getCpuInfo();
+            io.to(roomName).emit(
+                "machine_status_change",
+                {
+                    machineId,
+                    status: "offline",
+                    lastSeen: machine.lastSeen
+                }
+            );
 
-//         console.log("CPU information cached successfully:");
-//         console.log(cachedCpuInfo);
+            console.log(
+                `Heartbeat timeout: ${machineId}`
+            );
 
+            console.log(
+                `Machine marked offline: ${machineId}`
+            );
+        }
+    }
 
-//         // Only accept connections after CPU
-//         // information has been successfully cached.
-//         server.listen(PORT, () => {
-//             console.log(
-//                 `Backend server running on port ${PORT}`
-//             );
-//         });
+}, HEARTBEAT_CHECK_INTERVAL);
 
-//     } catch (error) {
-
-//         console.error(
-//             "Critical error: Failed to initialize CPU information.",
-//             error
-//         );
-
-//         process.exit(1);
-//     }
-// }
 
 
 // startServer();

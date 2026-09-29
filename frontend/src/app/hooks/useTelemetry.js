@@ -8,6 +8,7 @@ const MAX_SAMPLES = 30;
 
 export default function useTelemetry() {
   const [connected, setConnected] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
   const [cpuStatic, setCpuStatic] = useState(null);
   const [latest, setLatest] = useState(null);
   const [history, setHistory] = useState([]);
@@ -24,7 +25,16 @@ export default function useTelemetry() {
     machineId: "b5d24a59-a4fd-4ac9-8f1f-e6daf8b17193",
   });
 };
-    const handleDisconnect = () => setConnected(false);
+    
+    const handleDisconnect = () => {
+    setConnected(false);
+    setIsOnline(false);
+};
+    const handleMachineStatus = (data) => {
+  if (!data || typeof data !== "object") return;
+
+  setIsOnline(data.status === "online");
+};
 
     const handleCpuStatic = (data) => {
       if (data && typeof data === "object") {
@@ -56,6 +66,10 @@ export default function useTelemetry() {
     socket.on("disconnect", handleDisconnect);
     socket.on("cpu_static", handleCpuStatic);
     socket.on("metrics_update", handleMetrics);
+    socket.on(
+  "machine_status_change",
+  handleMachineStatus
+);
 
     return () => {
       socket.off("connect", handleConnect);
@@ -67,5 +81,5 @@ export default function useTelemetry() {
     };
   }, []);
 
-  return { connected, cpuStatic, latest, history };
+  return { connected, isOnline, cpuStatic, latest, history };
 }

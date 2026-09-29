@@ -17,6 +17,7 @@ const machineId = getMachineId();
 
 let pollingTimeout = null;
 let isPolling = false;
+let heartbeatInterval = null;
 
 console.log("Starting CPU Monitor Agent...");
 console.log(`Machine ID: ${machineId}`);
@@ -118,6 +119,33 @@ function stopPolling() {
     isPolling = false;
 }
 
+function startHeartbeat() {
+
+    if (heartbeatInterval !== null) {
+        return;
+    }
+
+    heartbeatInterval = setInterval(() => {
+
+        if (socket.connected) {
+
+            socket.emit("agent_heartbeat", {
+                machineId
+            });
+        }
+
+    }, 5000);
+}
+
+
+function stopHeartbeat() {
+
+    if (heartbeatInterval !== null) {
+
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+}
 
 socket.on("connect", async () => {
 
@@ -128,6 +156,7 @@ socket.on("connect", async () => {
     await sendStaticCpuInfo();
 
     startPolling();
+    startHeartbeat();
 });
 
 
@@ -138,6 +167,7 @@ socket.on("disconnect", (reason) => {
     );
 
     stopPolling();
+    stopHeartbeat();
 });
 
 
