@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import useTelemetry from "../hooks/useTelemetry";
 import CpuGauge from "./CpuGauge";
 import CpuUsageChart from "./CpuUsageChart";
@@ -16,7 +17,47 @@ function formatTimestamp(ts) {
 }
 
 export default function Dashboard() {
-  const { connected, isOnline, cpuStatic, latest, history } = useTelemetry();
+   const [machineId, setMachineId] = useState(null);
+  const [machineInput, setMachineInput] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const savedMachineId =
+      localStorage.getItem("cpu-monitor-machine-id");
+
+    if (savedMachineId) {
+      setMachineId(savedMachineId);
+    }
+
+    setLoaded(true);
+  }, []);
+
+  const { connected, isOnline, cpuStatic, latest, history } = useTelemetry(machineId);
+
+  const handleConnectMachine = () => {
+  const trimmedId = machineInput.trim();
+
+  if (!trimmedId) {
+    return;
+  }
+
+  localStorage.setItem(
+    "cpu-monitor-machine-id",
+    trimmedId
+  );
+
+  setMachineId(trimmedId);
+  setMachineInput("");
+};
+
+const handleChangeMachine = () => {
+  localStorage.removeItem(
+    "cpu-monitor-machine-id"
+  );
+
+  setMachineId(null);
+  setMachineInput("");
+};
 
   const cpu = latest?.cpu ?? null;
   const lastUpdate = formatTimestamp(latest?.timestamp);
@@ -25,6 +66,51 @@ export default function Dashboard() {
   : isOnline
     ? "live"
     : "offline";
+
+    if (!loaded) {
+  return (
+    <main className="min-h-screen bg-[#0a0a0a]" />
+  );
+}
+
+if (!machineId) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-4 text-neutral-200">
+      <div className="w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-950 p-6">
+        <h1 className="text-lg font-semibold text-neutral-50">
+          Connect your machine
+        </h1>
+
+        <p className="mt-2 text-sm text-neutral-500">
+          Enter the Machine ID shown by your CPU Monitor Agent.
+        </p>
+
+        <input
+          type="text"
+          value={machineInput}
+          onChange={(event) =>
+            setMachineInput(event.target.value)
+          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              handleConnectMachine();
+            }
+          }}
+          placeholder="Machine ID"
+          className="mt-5 w-full rounded-lg border border-neutral-800 bg-[#0a0a0a] px-3 py-2 text-sm text-neutral-200 outline-none focus:border-neutral-600"
+        />
+
+        <button
+          type="button"
+          onClick={handleConnectMachine}
+          className="mt-3 w-full rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-900 transition hover:bg-white"
+        >
+          Connect Machine
+        </button>
+      </div>
+    </main>
+  );
+}
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] px-4 py-6 text-neutral-200 sm:px-6 lg:px-10">
@@ -38,6 +124,13 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-4">
+            <button
+          type="button"
+          onClick={handleChangeMachine}
+        className="text-xs text-neutral-500 transition hover:text-neutral-200"
+        >
+  Change Machine
+</button>
             {lastUpdate && (
               <span className="text-xs tabular-nums text-neutral-500">Updated {lastUpdate}</span>
             )}

@@ -6,7 +6,7 @@ import { io } from "socket.io-client";
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000";
 const MAX_SAMPLES = 30;
 
-export default function useTelemetry() {
+export default function useTelemetry(machineId) {
   const [connected, setConnected] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
   const [cpuStatic, setCpuStatic] = useState(null);
@@ -15,15 +15,21 @@ export default function useTelemetry() {
   const socketRef = useRef(null);
 
   useEffect(() => {
+    setIsOnline(false);
+      setCpuStatic(null);
+      setLatest(null);
+      setHistory([]);
+
     const socket = io(SOCKET_URL);
     socketRef.current = socket;
 
     const handleConnect = () => {
   setConnected(true);
-
-  socket.emit("dashboard_subscribe", {
-    machineId: "b5d24a59-a4fd-4ac9-8f1f-e6daf8b17193",
-  });
+    if (machineId) {
+    socket.emit("dashboard_subscribe", {
+      machineId
+    });
+  }
 };
     
     const handleDisconnect = () => {
@@ -76,10 +82,14 @@ export default function useTelemetry() {
       socket.off("disconnect", handleDisconnect);
       socket.off("cpu_static", handleCpuStatic);
       socket.off("metrics_update", handleMetrics);
+        socket.off(
+       "machine_status_change",
+        handleMachineStatus
+  );
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [machineId]);
 
   return { connected, isOnline, cpuStatic, latest, history };
 }
