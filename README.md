@@ -1,12 +1,66 @@
-# CPU Monitor
+# CPU Monitor — Real-Time System Analytics Dashboard
 
-CPU Monitor is a real-time full-stack CPU monitoring dashboard designed to visualize CPU performance and process activity.
+A real-time CPU monitoring and observability project that streams system telemetry from a local machine to a web dashboard.
 
-The project uses a lightweight **local Node.js monitoring agent** to collect CPU telemetry from a machine. The agent sends telemetry to a **Node.js + Socket.IO backend**, which routes the data to the correct **Next.js dashboard** using machine-specific Socket.IO rooms.
+The project uses a lightweight Node.js monitoring agent to collect CPU telemetry, a Socket.IO backend to route telemetry between machines and dashboards, and a Next.js frontend to visualize the data in real time.
 
-The project is being developed as an observability-focused system with the goal of supporting remote machine monitoring and later deployment to cloud infrastructure.
+The architecture is designed so that the monitoring agent can eventually run on remote machines while the backend and dashboard are hosted separately.
 
-> **Status:** Under active development
+---
+
+## Architecture
+
+```text
+┌──────────────────────────────┐
+│       Monitored Machine      │
+│                              │
+│       Node.js Agent          │
+│   ┌──────────────────────┐   │
+│   │ CPU telemetry        │   │
+│   │ Static CPU info      │   │
+│   │ Heartbeats           │   │
+│   │ Persistent Machine ID│   │
+│   └──────────┬───────────┘   │
+└──────────────┼───────────────┘
+               │
+               │ Socket.IO
+               ▼
+┌──────────────────────────────┐
+│        Backend Relay         │
+│                              │
+│  Node.js + Express           │
+│  Socket.IO                   │
+│                              │
+│  • Machine rooms             │
+│  • Telemetry routing         │
+│  • Static CPU cache          │
+│  • Machine status tracking   │
+│  • Heartbeat monitoring      │
+└──────────────┬───────────────┘
+               │
+               │ Socket.IO
+               ▼
+┌──────────────────────────────┐
+│       Web Dashboard          │
+│                              │
+│  Next.js                     │
+│  Tailwind CSS                │
+│  Recharts                    │
+│                              │
+│  • Live CPU metrics          │
+│  • Historical charts         │
+│  • Machine pairing           │
+│  • Online/offline status     │
+└──────────────────────────────┘
+```
+
+The three components have intentionally separate responsibilities:
+
+- **Agent** — collects system telemetry.
+- **Backend** — routes and coordinates telemetry.
+- **Frontend** — visualizes telemetry.
+
+The backend does **not** collect CPU statistics from the machine it is running on.
 
 ---
 
@@ -14,344 +68,290 @@ The project is being developed as an observability-focused system with the goal 
 
 ### Real-Time CPU Monitoring
 
-The dashboard currently displays:
+The monitoring agent currently collects:
 
 - Overall CPU utilization
 - Per-logical-processor utilization
 - Average CPU clock speed
 - Per-logical-processor clock speeds
 - Top 3 CPU-consuming processes
-- Static CPU hardware information
-  - CPU model
-  - Manufacturer
-  - Physical core count
-  - Logical processor count
-  - Base clock speed
-  - Maximum reported clock speed
+- CPU manufacturer
+- CPU model
+- Physical core count
+- Logical processor count
+- Base clock speed
+- Maximum clock speed reported by the operating system
 
-Telemetry is streamed continuously to the dashboard using Socket.IO without requiring page refreshes.
+Telemetry is streamed continuously through Socket.IO.
 
-CPU temperature monitoring is not currently available and may be added later.
-
----
-
-## Architecture
-
-The project is separated into three main components:
-
-```text
-system-analytics/
-│
-├── agent/
-│   └── Local CPU telemetry collector
-│
-├── backend/
-│   └── Node.js + Express + Socket.IO relay
-│
-└── frontend/
-    └── Next.js + Tailwind CSS dashboard
-```
-
-The current architecture is:
-
-```text
-Local Machine
-     │
-     ▼
-Monitoring Agent
-(systeminformation)
-     │
-     │ Socket.IO
-     ▼
-Backend Relay
-(Node.js + Socket.IO)
-     │
-     │ Machine-specific room
-     ▼
-Next.js Dashboard
-     │
-     ▼
-Live CPU Visualization
-```
-
-This separation allows the machine being monitored to run only the lightweight agent while the backend and frontend can later be deployed independently.
+CPU temperature support is reserved for future development because availability varies by operating system and hardware.
 
 ---
 
-## Monitoring Agent
+### Monitoring Agent
 
-The monitoring agent runs on the machine being monitored.
+The project contains a standalone Node.js monitoring agent.
 
-It uses:
+The agent:
 
-- Node.js
-- systeminformation
-- Socket.IO Client
+- Collects CPU telemetry using `systeminformation`
+- Generates a persistent Machine ID
+- Sends static CPU information when it connects
+- Streams live CPU metrics
+- Sends periodic heartbeats
+- Automatically reconnects to the backend
+- Resumes telemetry after reconnection
 
-The agent is responsible for:
+Each installation generates its own persistent UUID.
 
-1. Reading CPU information from the operating system.
-2. Collecting live CPU telemetry.
-3. Identifying the machine using a persistent Machine ID.
-4. Connecting to the backend through Socket.IO.
-5. Sending static CPU information to the backend.
-6. Continuously sending live CPU metrics.
+Example:
 
-Each installation generates a persistent Machine ID stored locally in:
+```text
+Machine ID:
+b5d24a59-a4fd-4ac9-8f1f-e6daf8b17193
+```
+
+The local Machine ID is stored in:
 
 ```text
 agent/machine.json
 ```
 
-This file is excluded from Git.
-
-The Machine ID allows the backend to distinguish between different monitored computers.
-
-> Machine IDs are currently used for routing only and are not intended to provide authentication or security.
+This file is intentionally excluded from Git.
 
 ---
 
-## Backend
+## Machine Pairing
 
-The backend uses:
+The frontend does not contain a hard-coded Machine ID.
 
-- Node.js
-- Express
-- Socket.IO
+When opening the dashboard for the first time, the user is asked to enter the Machine ID displayed by the monitoring agent.
 
-The backend is being transitioned from a local telemetry collector into a **telemetry relay and coordinator**.
+```text
+Agent
+  │
+  │ displays Machine ID
+  ▼
+User enters Machine ID
+  │
+  ▼
+Dashboard
+  │
+  │ dashboard_subscribe
+  ▼
+Backend
+  │
+  ▼
+room:<machineId>
+```
 
-Agents connect to the backend and are assigned to machine-specific Socket.IO rooms.
+The selected Machine ID is stored in browser `localStorage`.
+
+This means subsequent visits automatically reconnect to the previously selected machine.
+
+The dashboard also provides a **Change Machine** option for selecting another machine.
+
+When switching machines, telemetry belonging to the previous machine is cleared before subscribing to the new machine.
+
+> Machine IDs currently provide routing and pairing only. They are not authentication credentials.
+
+---
+
+## Machine-Specific Telemetry Routing
+
+Socket.IO rooms isolate telemetry between machines.
+
+Each machine is assigned a room using:
+
+```text
+room:<machineId>
+```
 
 For example:
 
 ```text
-Agent A
-   │
-   ▼
-room:machine-A
-   │
-   ▼
-Dashboard A
+Agent A ─────► room:AAA ─────► Dashboard A
 
-
-Agent B
-   │
-   ▼
-room:machine-B
-   │
-   ▼
-Dashboard B
+Agent B ─────► room:BBB ─────► Dashboard B
 ```
 
-This prevents CPU telemetry from one monitored machine from being broadcast to unrelated dashboards.
+An agent joins the room associated with its Machine ID.
 
-### Socket.IO Events
-
-The agent sends:
+A dashboard sends:
 
 ```text
-agent_cpu_static
-agent_metrics_update
+dashboard_subscribe
 ```
 
-The backend relays the corresponding information to dashboards as:
+with the selected Machine ID and joins the corresponding room.
 
-```text
-cpu_static
-metrics_update
-```
-
-This allows the existing frontend telemetry interface to remain simple while the backend handles machine-specific routing.
+This architecture allows the backend to route telemetry for multiple machines independently.
 
 ---
 
-## Frontend
+## Machine Online / Offline Detection
 
-The frontend uses:
+The system distinguishes between:
+
+1. The browser being connected to the backend
+2. The monitored machine actually being online
+
+These are intentionally maintained as separate states.
+
+### Heartbeats
+
+The monitoring agent periodically sends:
+
+```text
+agent_heartbeat
+```
+
+to the backend.
+
+The backend stores machine state containing:
+
+```text
+{
+    status,
+    lastSeen
+}
+```
+
+The agent currently sends a heartbeat approximately every **5 seconds**.
+
+The backend periodically checks machine timestamps and marks a machine offline if heartbeats have not been received within the configured timeout.
+
+This helps detect silent failures such as:
+
+- Network loss
+- Wi-Fi disconnection
+- Agent crashes
+- Machine sleep
+- Abrupt connectivity loss
+
+Normal Socket.IO disconnects are also detected immediately.
+
+---
+
+## Dashboard Connection States
+
+The dashboard can represent three different states:
+
+```text
+Live
+Machine Offline
+Disconnected
+```
+
+### Live
+
+The browser is connected to the backend and the selected monitoring agent is online.
+
+### Machine Offline
+
+The browser is still connected to the backend, but the selected agent is offline.
+
+### Disconnected
+
+The browser has lost its connection to the backend.
+
+When a machine goes offline, the dashboard does **not** erase its existing telemetry.
+
+Instead:
+
+- The last CPU values remain visible
+- Existing graph history remains visible
+- Static CPU information remains visible
+- The last-update timestamp stops changing
+- The status changes to `Machine Offline`
+
+This prevents stale telemetry from being replaced with fake zero values while still making it clear that new data is no longer arriving.
+
+---
+
+## Static CPU Information Cache
+
+Static CPU information does not need to be transmitted continuously.
+
+When an agent connects, it sends its CPU hardware information once.
+
+The backend caches this information using the Machine ID.
+
+```text
+machineId
+    │
+    ▼
+Static CPU information
+```
+
+This solves both possible connection orders.
+
+### Dashboard connects first
+
+```text
+Dashboard
+   ↓
+Agent connects
+   ↓
+Static information forwarded
+```
+
+### Agent connects first
+
+```text
+Agent
+   ↓
+Backend caches CPU information
+   ↓
+Dashboard connects later
+   ↓
+Cached information sent immediately
+```
+
+---
+
+## Dashboard
+
+The frontend is built using:
 
 - Next.js
 - React
 - Tailwind CSS
-- Socket.IO Client
 - Recharts
+- Socket.IO Client
 
-The dashboard currently includes:
+The dashboard currently displays:
 
-- CPU utilization gauge
-- CPU usage history chart
-- CPU clock speed chart
-- Per-logical-processor visualization
-- Top CPU process list
-- Static CPU hardware information
-- Live backend connection status
+### CPU Usage Gauge
 
-The frontend maintains a rolling history of the latest telemetry samples for real-time chart visualization.
+Displays current overall CPU utilization.
 
-No fake or randomly generated telemetry is used. Dashboard values originate from the monitoring agent.
+### CPU Usage History
 
----
+Displays a rolling history of overall CPU load.
 
-## Machine-Based Telemetry Routing
+### Clock Speed History
 
-Each monitoring agent has a persistent Machine ID.
+Displays changes in average CPU frequency.
 
-When the agent connects, it identifies itself to the backend:
+### Logical Processor Monitoring
 
-```text
-Agent
-  │
-  │ Machine ID
-  ▼
-Backend
-  │
-  ▼
-room:<machineId>
-```
+Displays utilization and clock information for individual logical processors.
 
-A dashboard subscribes to the same Machine ID:
+### Top Processes
 
-```text
-Dashboard
-   │
-   │ dashboard_subscribe
-   ▼
-Backend
-   │
-   ▼
-room:<machineId>
-```
+Displays the processes currently consuming the most CPU.
 
-The resulting data flow is:
+### Static CPU Information
 
-```text
-Agent
-  │
-  │ agent_metrics_update
-  ▼
-Backend
-  │
-  │ room:<machineId>
-  ▼
-Dashboard
-  │
-  │ metrics_update
-  ▼
-Live Charts
-```
+Displays hardware information such as:
 
-This architecture provides the foundation for monitoring multiple machines through the same backend.
-
----
-
-## Performance Design
-
-The monitoring system is designed to keep telemetry collection lightweight.
-
-### Non-Overlapping Polling
-
-The monitoring agent uses self-scheduling asynchronous polling rather than a fixed `setInterval()`.
-
-The next telemetry collection is scheduled only after the previous collection finishes.
-
-Conceptually:
-
-```text
-Collect metrics
-      │
-      ▼
-Send telemetry
-      │
-      ▼
-Wait approximately 1 second
-      │
-      ▼
-Collect again
-```
-
-This prevents slow telemetry queries from creating overlapping collection operations.
-
-### Concurrent Metric Collection
-
-Independent system telemetry requests are executed concurrently using `Promise.all()` where appropriate.
-
-This reduces the time required to construct each telemetry snapshot.
-
-### Automatic Socket.IO Reconnection
-
-The monitoring agent and dashboard use Socket.IO connections.
-
-If the connection is interrupted, Socket.IO can reconnect automatically.
-
-When the dashboard reconnects, it subscribes to its Machine ID again so it can rejoin the correct machine-specific room.
-
----
-
-## Current Development Progress
-
-### Monitoring
-
-- [x] CPU telemetry collection
-- [x] Static CPU information collection
-- [x] Overall CPU utilization
-- [x] Per-logical-processor utilization
-- [x] CPU clock monitoring
-- [x] Per-logical-processor clock monitoring
-- [x] Top CPU process detection
-- [x] Non-overlapping asynchronous polling
-- [x] Concurrent metric collection
-
-### Monitoring Agent
-
-- [x] Separate monitoring agent
-- [x] Persistent Machine ID generation
-- [x] Socket.IO backend connection
-- [x] Static CPU information transmission
-- [x] Live CPU telemetry transmission
-- [x] Automatic Socket.IO reconnection
-
-### Backend
-
-- [x] Express server
-- [x] Socket.IO server
-- [x] Agent connection detection
-- [x] Agent Machine ID handling
-- [x] Machine-specific Socket.IO rooms
-- [x] Agent telemetry reception
-- [x] Machine-specific telemetry routing
-- [x] Dashboard machine subscription
-- [ ] Cache latest static CPU information per machine
-- [ ] Remove legacy backend CPU collector
-- [ ] Agent/dashboard authentication
-
-### Frontend
-
-- [x] Next.js dashboard
-- [x] Tailwind CSS interface
-- [x] Socket.IO Client integration
-- [x] Live connection status
-- [x] CPU utilization gauge
-- [x] CPU usage history chart
-- [x] CPU clock speed chart
-- [x] Per-logical-processor visualization
-- [x] Top CPU process visualization
-- [x] Static CPU information display
-- [x] Rolling telemetry history
-- [x] Machine room subscription
-
-### Future Work
-
-- [ ] Static CPU information caching per machine
-- [ ] Secure agent authentication
-- [ ] Secure dashboard access
-- [ ] User-friendly machine pairing
-- [ ] Historical telemetry storage
-- [ ] CPU temperature support
-- [ ] Backend cloud deployment
-- [ ] Frontend deployment
-- [ ] Remote machine monitoring
-- [ ] Containerization
-- [ ] Monitoring and alerting infrastructure
+- CPU manufacturer
+- CPU model
+- Physical cores
+- Logical processors
+- Base frequency
+- Maximum reported frequency
 
 ---
 
@@ -373,7 +373,6 @@ system-analytics/
 │
 ├── backend/
 │   ├── src/
-│   │   ├── metrics.js
 │   │   └── server.js
 │   │
 │   ├── package.json
@@ -383,32 +382,42 @@ system-analytics/
 │   ├── src/
 │   │   └── app/
 │   │       ├── components/
+│   │       │   ├── Dashboard.js
+│   │       │   ├── CpuGauge.js
+│   │       │   ├── CpuUsageChart.js
+│   │       │   ├── ClockSpeedChart.js
+│   │       │   ├── LogicalProcessorChart.js
+│   │       │   ├── ProcessList.js
+│   │       │   └── StaticCpuInfo.js
+│   │       │
 │   │       ├── hooks/
 │   │       │   └── useTelemetry.js
+│   │       │
 │   │       ├── globals.css
 │   │       ├── layout.js
 │   │       └── page.js
 │   │
-│   ├── package.json
-│   └── package-lock.json
+│   └── package.json
 │
 ├── .gitignore
 └── README.md
 ```
 
-> `backend/src/metrics.js` currently remains during the migration from backend-based telemetry collection to the standalone monitoring agent. It will be removed once the relay architecture is fully completed.
+---
+
+# Running Locally
+
+The project currently consists of three processes:
+
+1. Backend
+2. Monitoring Agent
+3. Frontend
+
+All three should be running during local development.
 
 ---
 
-## Running the Project Locally
-
-The project currently requires three processes:
-
-1. Backend relay
-2. Monitoring agent
-3. Next.js frontend
-
-### 1. Start the Backend
+## 1. Start the Backend
 
 Open a terminal:
 
@@ -424,9 +433,15 @@ The backend runs on:
 http://localhost:4000
 ```
 
+Expected output:
+
+```text
+Backend server running on port 4000
+```
+
 ---
 
-### 2. Start the Monitoring Agent
+## 2. Start the Monitoring Agent
 
 Open another terminal:
 
@@ -436,31 +451,22 @@ npm install
 node src/agent.js
 ```
 
-The agent will:
-
-- Load or generate its Machine ID
-- Connect to the backend
-- Send static CPU information
-- Begin streaming CPU telemetry
+The agent will display its persistent Machine ID.
 
 Example:
 
 ```text
 Starting CPU Monitor Agent...
-Machine ID: <machine-id>
+Machine ID: b5d24a59-a4fd-4ac9-8f1f-e6daf8b17193
 Backend: http://localhost:4000
-
-Connected to backend
-Static CPU information sent.
-
-Telemetry sent | CPU: 24.31%
-Telemetry sent | CPU: 31.82%
-Telemetry sent | CPU: 18.47%
+Connected to backend: ...
 ```
+
+Keep this terminal running while monitoring the machine.
 
 ---
 
-### 3. Start the Frontend
+## 3. Start the Frontend
 
 Open another terminal:
 
@@ -470,91 +476,252 @@ npm install
 npm run dev
 ```
 
-The dashboard runs on:
+Open:
 
 ```text
 http://localhost:3000
 ```
 
-Open it in a browser to view live CPU telemetry.
+On the first visit, enter the Machine ID displayed by the monitoring agent.
+
+The browser remembers the selected machine for future visits.
 
 ---
 
-## Current Local Development Flow
+# Socket.IO Event Flow
 
-During local development:
+The main events currently used by the system are:
+
+```text
+Agent → Backend
+
+agent_cpu_static
+agent_metrics_update
+agent_heartbeat
+
+
+Dashboard → Backend
+
+dashboard_subscribe
+
+
+Backend → Dashboard
+
+cpu_static
+metrics_update
+machine_status_change
+```
+
+A simplified flow:
 
 ```text
 Agent
-http://localhost
-       │
-       ▼
-Backend
-http://localhost:4000
-       │
-       ▼
-Frontend
-http://localhost:3000
+  │
+  ├── agent_cpu_static
+  ├── agent_metrics_update
+  └── agent_heartbeat
+          │
+          ▼
+       Backend
+          │
+          ├── machine room
+          ├── static cache
+          └── status tracking
+          │
+          ▼
+       Dashboard
+          │
+          ├── cpu_static
+          ├── metrics_update
+          └── machine_status_change
 ```
-
-The frontend currently subscribes to a specific development Machine ID while the machine-pairing system is being developed.
 
 ---
 
-## Planned Deployment Architecture
+# Current Development Status
 
-The intended deployment architecture is:
+## Completed
+
+- [x] Standalone Node.js monitoring agent
+- [x] Real CPU telemetry collection
+- [x] Overall CPU utilization
+- [x] Per-logical-processor utilization
+- [x] CPU clock monitoring
+- [x] Top CPU-consuming processes
+- [x] Static CPU hardware information
+- [x] Persistent Machine IDs
+- [x] Socket.IO Agent → Backend communication
+- [x] Socket.IO Backend → Dashboard communication
+- [x] Machine-specific Socket.IO rooms
+- [x] Dashboard machine subscriptions
+- [x] Per-machine static CPU caching
+- [x] Agent automatic reconnection
+- [x] Dashboard automatic re-subscription
+- [x] Machine heartbeat system
+- [x] Online/offline machine tracking
+- [x] Last-seen tracking
+- [x] Silent-disconnection timeout detection
+- [x] Live/offline/disconnected dashboard states
+- [x] Preservation of last-known telemetry while offline
+- [x] Dynamic Machine ID selection
+- [x] Browser persistence using localStorage
+- [x] Change Machine functionality
+- [x] Removal of backend-local CPU collection
+- [x] Separation of Agent, Backend, and Frontend responsibilities
+- [x] Real-time Next.js dashboard
+- [x] Rolling telemetry charts
+- [x] End-to-end local integration testing
+
+---
+
+# Current Limitations
+
+The project is currently intended for local development and experimentation.
+
+### No Authentication
+
+Authentication and authorization have intentionally not been implemented yet.
+
+Machine IDs are currently used for routing, not security.
+
+A user who knows another Machine ID could potentially attempt to subscribe to that machine's telemetry.
+
+For this reason, the current version should **not be treated as a secure public multi-user monitoring service**.
+
+### In-Memory Backend State
+
+Machine status and static CPU caches currently exist in backend memory.
+
+Restarting the backend clears this temporary state.
+
+Agents automatically reconnect and repopulate their state afterward.
+
+### No Historical Database
+
+Telemetry is currently streamed live and maintained temporarily in the browser.
+
+Long-term historical metrics are not yet persisted.
+
+### CPU Temperature
+
+Temperature collection is currently disabled because support depends on operating system and hardware sensor availability.
+
+---
+
+# Planned Development
+
+Future phases may include:
+
+- Production deployment
+- Environment-based backend/frontend configuration
+- Production CORS configuration
+- Persistent telemetry storage
+- Machine naming
+- Improved machine pairing
+- Multi-machine dashboard selection
+- Authentication and authorization
+- Agent authentication
+- Prometheus integration
+- Grafana dashboards
+- Alerting
+- Slack or Discord notifications
+- Health endpoints
+- Structured logging
+- Docker
+- CI/CD with GitHub Actions
+- CPU temperature monitoring where supported
+
+Authentication is intentionally **not part of the current implementation** and may be added in a later phase.
+
+---
+
+# Deployment Architecture
+
+The intended production architecture is:
 
 ```text
 User's Computer
       │
       ▼
-Local Monitoring Agent
+Monitoring Agent
       │
       │ Internet / Socket.IO
       ▼
-Hosted Backend Relay
+Hosted Backend
       │
+      │ Socket.IO
       ▼
 Hosted Next.js Dashboard
 ```
 
-The planned deployment model is:
+A persistent Node.js hosting platform is required for the Socket.IO backend.
 
-```text
-Monitoring Agent
-    → runs locally on monitored machines
+The frontend can be deployed independently from the backend.
 
-Backend
-    → persistent Node.js hosting
-
-Frontend
-    → Next.js hosting
-```
-
-Before public deployment, authentication will be added so that Machine IDs alone cannot be used to access telemetry.
+The monitoring agent remains on the machine being monitored because it requires access to local system information.
 
 ---
 
-## Future Plans
+# Design Principles
 
-Major planned improvements include:
+This project follows several architectural principles:
 
-- Complete removal of CPU collection from the backend
-- Cache machine information for dashboards that connect after an agent
-- Secure agent authentication
-- Secure dashboard-to-machine authorization
-- User-friendly machine registration and pairing
-- Support for multiple monitored computers
-- Historical CPU telemetry storage
-- CPU temperature support where available
-- Remote monitoring over the internet
-- Containerization
-- Cloud deployment
-- Observability and alerting
+### Separation of Responsibilities
+
+Telemetry collection, routing, and visualization are handled by separate components.
+
+### Real Telemetry Only
+
+The dashboard does not generate fake or random CPU data.
+
+### Machine Isolation
+
+Machine IDs and Socket.IO rooms keep telemetry streams separated.
+
+### Graceful Failure
+
+A machine going offline does not destroy its last-known telemetry.
+
+### Non-Overlapping Polling
+
+Telemetry collection uses recursive scheduling so a new collection cycle does not begin before the previous collection operation finishes.
+
+### Extensible Architecture
+
+The Agent → Backend → Dashboard model is designed to support future remote monitoring, persistent storage, observability tooling, and multiple monitored machines.
 
 ---
 
-## License
+# Tech Stack
 
-This project is currently intended for educational and development purposes.
+**Agent**
+
+- Node.js
+- systeminformation
+- Socket.IO Client
+
+**Backend**
+
+- Node.js
+- Express
+- Socket.IO
+
+**Frontend**
+
+- Next.js
+- React
+- Tailwind CSS
+- Recharts
+- Socket.IO Client
+
+**Development**
+
+- Git
+- GitHub
+- VS Code
+
+---
+
+# License
+
+This project is currently intended for educational and portfolio purposes.
