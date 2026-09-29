@@ -3,10 +3,10 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 
-const {
-    getCpuInfo,
-    getSystemMetrics
-} = require("./metrics");
+// const {
+//     getCpuInfo,
+//     getSystemMetrics
+// } = require("./metrics");
 
 
 // --------------------------------------------------
@@ -33,67 +33,67 @@ const PORT = 4000;
 // Server state
 // --------------------------------------------------
 
-// Static CPU information loaded once at startup
-let cachedCpuInfo = null;
+// // Static CPU information loaded once at startup
+// let cachedCpuInfo = null;
 
-// Number of currently connected dashboard clients
-let activeClients = 0;
+// // Number of currently connected dashboard clients
+// let activeClients = 0;
 
-// Reference to the next scheduled metrics poll
-let metricsTimeout = null;
+// // Reference to the next scheduled metrics poll
+// let metricsTimeout = null;
 
 
 // --------------------------------------------------
 // Live metrics polling worker
 // --------------------------------------------------
 
-async function pollAndBroadcast() {
+// async function pollAndBroadcast() {
 
-    // Nobody is watching anymore.
-    // Do not collect metrics or schedule another poll.
-    if (activeClients === 0) {
-        return;
-    }
+//     // Nobody is watching anymore.
+//     // Do not collect metrics or schedule another poll.
+//     if (activeClients === 0) {
+//         return;
+//     }
 
-    try {
+//     try {
 
-        // Wait until the current hardware collection
-        // completely finishes.
-        const metrics = await getSystemMetrics();
+//         // Wait until the current hardware collection
+//         // completely finishes.
+//         const metrics = await getSystemMetrics();
 
-        // It is possible that all clients disconnected
-        // while we were waiting for the metrics.
-        if (activeClients > 0) {
-            io.emit("metrics_update", metrics);
-        }
+//         // It is possible that all clients disconnected
+//         // while we were waiting for the metrics.
+//         if (activeClients > 0) {
+//             io.emit("metrics_update", metrics);
+//         }
 
-    } catch (error) {
+//     } catch (error) {
 
-        // A temporary telemetry failure should not
-        // crash the entire backend.
-        console.error(
-            "Error collecting live system metrics:",
-            error
-        );
+//         // A temporary telemetry failure should not
+//         // crash the entire backend.
+//         console.error(
+//             "Error collecting live system metrics:",
+//             error
+//         );
 
-    } finally {
+//     } finally {
 
-        /*
-         * Only schedule the NEXT collection after
-         * the current collection has completely finished.
-         *
-         * This prevents overlapping hardware polling.
-         */
-        if (activeClients > 0) {
-            metricsTimeout = setTimeout(
-                pollAndBroadcast,
-                1000
-            );
-        } else {
-            metricsTimeout = null;
-        }
-    }
-}
+//         /*
+//          * Only schedule the NEXT collection after
+//          * the current collection has completely finished.
+//          *
+//          * This prevents overlapping hardware polling.
+//          */
+//         if (activeClients > 0) {
+//             metricsTimeout = setTimeout(
+//                 pollAndBroadcast,
+//                 1000
+//             );
+//         } else {
+//             metricsTimeout = null;
+//         }
+//     }
+// }
 
 
 // --------------------------------------------------
@@ -246,15 +246,15 @@ io.on("connection", (socket) => {
     }
 });
 
-    activeClients++;
+    // activeClients++;
 
     console.log(
         `Dashboard connected: ${socket.id}`
     );
 
-    console.log(
-        `Active dashboards: ${activeClients}`
-    );
+    // console.log(
+    //     `Active dashboards: ${activeClients}`
+    // );
 
     // socket.emit(
     //     "cpu_static",
@@ -271,18 +271,25 @@ io.on("connection", (socket) => {
     //     pollAndBroadcast();
     // }
 
-
     socket.on("disconnect", () => {
 
-        activeClients--;
+    console.log(
+        `Dashboard disconnected: ${socket.id}`
+    );
+    });
 
-        console.log(
-            `Dashboard disconnected: ${socket.id}`
-        );
 
-        console.log(
-            `Active dashboards: ${activeClients}`
-        );
+    // socket.on("disconnect", () => {
+
+    //     activeClients--;
+
+    //     console.log(
+    //         `Dashboard disconnected: ${socket.id}`
+    //     );
+
+    //     console.log(
+    //         `Active dashboards: ${activeClients}`
+    //     );
 
 
         // if (activeClients === 0) {
@@ -297,44 +304,50 @@ io.on("connection", (socket) => {
         //     );
         // }
     });
-});
+
 
 
 // --------------------------------------------------
 // Server startup
 // --------------------------------------------------
 
-async function startServer() {
+// async function startServer() {
 
-    try {
+//     try {
 
-        console.log("Reading CPU hardware information...");
+//         console.log("Reading CPU hardware information...");
 
-        // Fetch static CPU information exactly once.
-        cachedCpuInfo = await getCpuInfo();
+//         // Fetch static CPU information exactly once.
+//         cachedCpuInfo = await getCpuInfo();
 
-        console.log("CPU information cached successfully:");
-        console.log(cachedCpuInfo);
-
-
-        // Only accept connections after CPU
-        // information has been successfully cached.
-        server.listen(PORT, () => {
-            console.log(
-                `Backend server running on port ${PORT}`
-            );
-        });
-
-    } catch (error) {
-
-        console.error(
-            "Critical error: Failed to initialize CPU information.",
-            error
-        );
-
-        process.exit(1);
-    }
-}
+//         console.log("CPU information cached successfully:");
+//         console.log(cachedCpuInfo);
 
 
-startServer();
+//         // Only accept connections after CPU
+//         // information has been successfully cached.
+//         server.listen(PORT, () => {
+//             console.log(
+//                 `Backend server running on port ${PORT}`
+//             );
+//         });
+
+//     } catch (error) {
+
+//         console.error(
+//             "Critical error: Failed to initialize CPU information.",
+//             error
+//         );
+
+//         process.exit(1);
+//     }
+// }
+
+
+// startServer();
+server.listen(PORT, () => {
+
+    console.log(
+        `Backend server running on port ${PORT}`
+    );
+});

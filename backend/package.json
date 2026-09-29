@@ -12,7 +12,6 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
-    "socket.io": "^4.8.3",
-    "systeminformation": "^5.33.13"
+    "socket.io": "^4.8.3"
   }
 }
